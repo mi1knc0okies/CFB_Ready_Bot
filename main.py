@@ -5,9 +5,9 @@ from dotenv import load_dotenv
 import asyncio
 import sys
 
-from database_manager import DatabaseManager
-from table_generator import TableGenerator
-from bot_commands import BotCommands
+from db import DatabaseManager
+from table import TableGenerator
+from commands import BotCommands
 
 if sys.platform.startswith('win'):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
