@@ -140,7 +140,7 @@ class BotCommands:
         async def ready(interaction: discord.Interaction, leagues: str):
             await interaction.response.defer(ephemeral=True)
             
-            username, allowed = self.bot.get_user_mapping(interaction.user.id)
+            username, allowed = await self.bot.get_user_mapping(interaction.user.id)
             if not username:
                 await interaction.followup.send("You are not registered. Contact admin.", ephemeral=True)
                 return
@@ -189,7 +189,7 @@ class BotCommands:
         async def unready(interaction: discord.Interaction, leagues: str):
             await interaction.response.defer(ephemeral=True)
             
-            username, allowed = self.bot.get_user_mapping(interaction.user.id)
+            username, allowed = await self.bot.get_user_mapping(interaction.user.id)
             if not username:
                 await interaction.followup.send("You are not registered. Contact admin.", ephemeral=True)
                 return
@@ -276,6 +276,105 @@ class BotCommands:
             channel = await self.bot.get_main_channel(interaction.guild.id)
             if channel:
                 await channel.send(f"🏈 **{league_display} Week {new_week}** advanced by {interaction.user.mention} on {day_str} at {time_str}")
+
+        @self.bot.tree.command(name="set_week", description="Set the current week for a league")
+        @app_commands.describe(
+            league="League name",
+            week="Week number to set"
+        )
+        async def set_week(interaction: discord.Interaction, league: str, week: int):
+            # Allow any registered user to set weeks
+            username, allowed = self.bot.get_user_mapping(interaction.user.id)
+            if not username:
+                await interaction.response.send_message("You are not registered. Contact admin.", ephemeral=True)
+                return
+
+            if week < 1:
+                await interaction.response.send_message("Week must be 1 or greater.", ephemeral=True)
+                return
+
+            await interaction.response.defer(ephemeral=True)
+
+            result = await self.bot.db.set_league_week(interaction.guild.id, league.lower(), week)
+            
+            if result:
+                league_display, old_week = result
+                await self.bot.update_table_message(interaction.guild.id)
+                if interaction.guild.id != self.bot.main_server_id and self.bot.main_server_id:
+                    await self.bot.update_table_message(self.bot.main_server_id)
+                
+                await interaction.followup.send(f"Set {league_display} to Week {week} (was Week {old_week})", ephemeral=True)
+            else:
+                await interaction.followup.send(f"League '{league}' not found or not assigned to this server.", ephemeral=True)
+
+        @self.bot.tree.command(name="add_user_to_league", description="Add an existing user to specific leagues")
+        @app_commands.describe(
+            username="Username to add to leagues",
+            leagues="Comma-separated league names"
+        )
+        async def add_user_to_league(interaction: discord.Interaction, username: str, leagues: str):
+            is_admin = (interaction.user.guild_permissions.administrator or
+                       interaction.user.id == interaction.guild.owner_id or
+                       interaction.user.guild_permissions.manage_guild)
+
+            if not is_admin:
+                await interaction.response.send_message("You need administrator permissions.", ephemeral=True)
+                return
+
+            await interaction.response.defer(ephemeral=True)
+            
+            username = username.lower().strip()
+            league_names = [l.strip().lower() for l in leagues.split(',')]
+            
+            result = await self.bot.db.add_existing_user_to_leagues(username, league_names)
+            
+            if result is None:
+                await interaction.followup.send(f"User '{username}' not found.", ephemeral=True)
+                return
+            
+            valid_leagues, invalid_leagues = result
+            
+            await self.bot.update_table_message(interaction.guild.id)
+            if interaction.guild.id != self.bot.main_server_id and self.bot.main_server_id:
+                await self.bot.update_table_message(self.bot.main_server_id)
+            
+            # Build response message
+            response_msg = ""
+            if valid_leagues:
+                response_msg += f"Added {username} to leagues: {', '.join(valid_leagues)}"
+            
+            if invalid_leagues:
+                if response_msg:
+                    response_msg += f"\n\nWarning: These leagues were not found: {', '.join(invalid_leagues)}"
+                else:
+                    response_msg = f"Warning: These leagues were not found: {', '.join(invalid_leagues)}"
+            
+            await interaction.followup.send(response_msg, ephemeral=True)
+
+        @self.bot.tree.command(name="link_discord", description="Link a Discord user to a username")
+        @app_commands.describe(
+            username="Username to link",
+            user="Discord user to link to this username"
+        )
+        async def link_discord(interaction: discord.Interaction, username: str, user: discord.User):
+            is_admin = (interaction.user.guild_permissions.administrator or
+                       interaction.user.id == interaction.guild.owner_id or
+                       interaction.user.guild_permissions.manage_guild)
+
+            if not is_admin:
+                await interaction.response.send_message("You need administrator permissions.", ephemeral=True)
+                return
+
+            await interaction.response.defer(ephemeral=True)
+            
+            username = username.lower().strip()
+            
+            result = await self.bot.db.link_discord_user(username, user.id)
+            
+            if result:
+                await interaction.followup.send(f"Linked Discord user {user.mention} to username '{username}'", ephemeral=True)
+            else:
+                await interaction.followup.send(f"Username '{username}' not found.", ephemeral=True)
 
         @self.bot.tree.command(name="status", description="View current table")
         async def status(interaction: discord.Interaction):

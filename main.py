@@ -5,9 +5,9 @@ from dotenv import load_dotenv
 import asyncio
 import sys
 
-from db import DatabaseManager
-from table import TableGenerator
-from commands import BotCommands
+from database_manager import DatabaseManager
+from table_generator import TableGenerator
+from bot_commands import BotCommands
 
 if sys.platform.startswith('win'):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -34,8 +34,14 @@ class CFBBot(commands.Bot):
         self.commands_handler = BotCommands(self)
         self.commands_handler.setup_commands()
 
-    def get_user_mapping(self, user_id):
-        """Get username from environment variables"""
+    async def get_user_mapping(self, user_id):
+        """Get username from Discord ID or environment variables"""
+        # First try to get from database using discord_id
+        username_from_db = await self.db.get_user_by_discord_id(user_id)
+        if username_from_db:
+            return username_from_db, 1
+        
+        # Fall back to environment variables
         for key, value in os.environ.items():
             if key.startswith(('PATH', 'HOME', 'USER', 'DISCORD_', 'APP_', 'MAIN_', 'DB_')):
                 continue

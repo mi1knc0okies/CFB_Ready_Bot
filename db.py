@@ -514,4 +514,79 @@ class DatabaseManager:
                 WHERE server_id = $1 AND league_id = $2
             """, server_id, league_info['league_id'])
             
+    async def set_league_week(self, server_id, league_name, week):
+        """Set the current week for a league on a server"""
+        async with self.pool.acquire() as conn:
+            # Check if league exists and is assigned to this server
+            league_info = await conn.fetchrow("""
+                SELECT l.league_id, l.display_name, sl.current_week
+                FROM leagues l
+                JOIN server_leagues sl ON l.league_id = sl.league_id
+                WHERE l.name = $1 AND sl.server_id = $2
+            """, league_name, server_id)
+
+            if not league_info:
+                return None
+
+            # Update the week
+            await conn.execute("""
+                UPDATE server_leagues 
+                SET current_week = $3
+                WHERE server_id = $1 AND league_id = $2
+            """, server_id, league_info['league_id'], week)
+            
+            return league_info['display_name'], league_info['current_week']
+
+    async def add_existing_user_to_leagues(self, username, league_names):
+        """Add an existing user to specific leagues"""
+        async with self.pool.acquire() as conn:
+            # Check if user exists
+            user_id = await conn.fetchval(
+                "SELECT user_id FROM users WHERE username = $1", username
+            )
+            
+            if not user_id:
+                return None
+            
+            valid_leagues = []
+            invalid_leagues = []
+            
+            for league_name in league_names:
+                # Check if league exists
+                league_id = await conn.fetchval(
+                    "SELECT league_id FROM leagues WHERE name = $1", league_name
+                )
+                
+                if league_id:
+                    # Add user to league globally
+                    await conn.execute("""
+                        INSERT INTO user_leagues (user_id, league_id, ready_status)
+                        VALUES ($1, $2, '')
+                        ON CONFLICT (user_id, league_id) DO UPDATE SET ready_status = ''
+                    """, user_id, league_id)
+                    valid_leagues.append(league_name)
+                else:
+                    invalid_leagues.append(league_name)
+            
+            return valid_leagues, invalid_leagues
+
+    async def link_discord_user(self, username, discord_id):
+        """Link a Discord user ID to a username"""
+        async with self.pool.acquire() as conn:
+            result = await conn.execute("""
+                UPDATE users 
+                SET discord_id = $2
+                WHERE username = $1
+            """, username, discord_id)
+            
+            return result == "UPDATE 1"
+
+    async def get_user_by_discord_id(self, discord_id):
+        """Get username by Discord ID"""
+        async with self.pool.acquire() as conn:
+            username = await conn.fetchval(
+                "SELECT username FROM users WHERE discord_id = $1", discord_id
+            )
+            return username
+
             return league_info['display_name'], new_week
