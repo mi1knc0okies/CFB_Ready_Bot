@@ -23,11 +23,18 @@ class TableGenerator:
             table += "-" * league_width + "+"
         table += "\n"
         
-        # Header row - ensure consistent spacing
+        # Header row with week numbers - ensure consistent spacing
         table += "|" + "Name".center(name_width) + "|"
         for league in leagues:
             league_display = league['display_name'][:3].upper()
             table += league_display.center(league_width) + "|"
+        table += "\n"
+        
+        # Week row (show week numbers for each league)
+        table += "|" + "Week".center(name_width) + "|"
+        for league in leagues:
+            week_display = f"W{league['current_week']}"
+            table += week_display.center(league_width) + "|"
         table += "\n"
         
         # Header separator
@@ -60,7 +67,7 @@ class TableGenerator:
                     display_status = ' '
                 else:
                     # User has a custom status or is ready (X)
-                    display_status = status[:3]  # Limit to 3 characters to maintain spacing
+                    display_status = status[:3].upper()  # Limit to 3 characters to maintain spacing
                 
                 table += display_status.center(league_width) + "|"
             table += "\n"
