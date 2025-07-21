@@ -522,6 +522,95 @@ class BotCommands:
             except Exception as e:
                 await interaction.followup.send(f"❌ Failed to sync commands: {e}", ephemeral=True)
 
+        @self.bot.tree.command(name="debug_server", description="Debug server configuration")
+        async def debug_server(interaction: discord.Interaction):
+            if not await self.check_admin_permissions(interaction):
+                await interaction.response.send_message("You need administrator permissions.", ephemeral=True)
+                return
+
+            await interaction.response.defer(ephemeral=True)
+
+            async with self.bot.db.pool.acquire() as conn:
+                # Check server setup
+                server_info = await conn.fetchrow("SELECT * FROM servers WHERE server_id = $1", interaction.guild.id)
+                
+                # Get leagues assigned to this server
+                server_leagues = await conn.fetch("""
+                    SELECT l.league_id, l.name, l.display_name, sl.current_week
+                    FROM leagues l
+                    JOIN server_leagues sl ON l.league_id = sl.league_id
+                    WHERE sl.server_id = $1
+                """, interaction.guild.id)
+                
+                # Get all users in those leagues
+                if server_leagues:
+                    league_ids = [sl['league_id'] for sl in server_leagues]
+                    users_in_leagues = await conn.fetch("""
+                        SELECT DISTINCT u.username, ul.league_id, l.name as league_name, ul.ready_status
+                        FROM users u
+                        JOIN user_leagues ul ON u.user_id = ul.user_id
+                        JOIN leagues l ON ul.league_id = l.league_id
+                        WHERE ul.league_id = ANY($1)
+                        ORDER BY u.username, l.name
+                    """, league_ids)
+                else:
+                    users_in_leagues = []
+
+            message = f"**Debug Info for {interaction.guild.name}:**\n\n"
+            
+            if server_info:
+                message += f"**Server Setup:** ✅ Configured\n"
+                message += f"• Main Channel: <#{server_info['main_channel_id']}>\n"
+                message += f"• Is Main Server: {server_info['is_main_server']}\n\n"
+            else:
+                message += f"**Server Setup:** ❌ Not configured! Run `/setup`\n\n"
+            
+            if server_leagues:
+                message += f"**Leagues Assigned to This Server ({len(server_leagues)}):**\n"
+                for league in server_leagues:
+                    message += f"• {league['display_name']} (`{league['name']}`) - Week {league['current_week']}\n"
+            else:
+                message += f"**Leagues:** ❌ No leagues assigned! Use `/assign_league`\n"
+            
+            message += f"\n"
+            
+            if users_in_leagues:
+                message += f"**Users in Assigned Leagues ({len(set(u['username'] for u in users_in_leagues))}):**\n"
+                current_user = None
+                for user_league in users_in_leagues:
+                    if user_league['username'] != current_user:
+                        if current_user is not None:
+                            message += "\n"
+                        current_user = user_league['username']
+                        message += f"• **{user_league['username'].capitalize()}:**\n"
+                    
+                    status = user_league['ready_status'] if user_league['ready_status'] else 'Not Ready'
+                    message += f"  - {user_league['league_name']}: {status}\n"
+            else:
+                message += f"**Users:** ❌ No users found in assigned leagues!\n"
+                message += f"  - Users may exist but not be assigned to leagues on this server\n"
+                message += f"  - Use `/add_user_to_league` to assign existing users\n"
+
+            # Split message if too long
+            if len(message) > 2000:
+                messages = []
+                current = ""
+                for line in message.split('\n'):
+                    if len(current + line + '\n') > 1900:
+                        messages.append(current)
+                        current = line + '\n'
+                    else:
+                        current += line + '\n'
+                messages.append(current)
+                
+                for i, msg in enumerate(messages):
+                    if i == 0:
+                        await interaction.followup.send(msg, ephemeral=True)
+                    else:
+                        await interaction.followup.send(msg, ephemeral=True)
+            else:
+                await interaction.followup.send(message, ephemeral=True)
+
         @self.bot.tree.command(name="migrate", description="Migrate existing data to new schema")
         async def migrate(interaction: discord.Interaction):
             if not await self.check_admin_permissions(interaction):
