@@ -588,5 +588,3 @@ class DatabaseManager:
                 "SELECT username FROM users WHERE discord_id = $1", discord_id
             )
             return username
-
-            return league_info['display_name'], new_week

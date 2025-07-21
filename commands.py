@@ -110,8 +110,52 @@ class BotCommands:
                 await interaction.followup.send("You need administrator permissions.", ephemeral=True)
                 return
             
-            username = username.lower().strip()
             league_names = [l.strip().lower() for l in leagues.split(',')]
+            
+            removed_leagues = await self.bot.db.remove_user_from_leagues(username, league_names)
+            
+            if removed_leagues:
+                await self.bot.update_table_message(interaction.guild.id)
+                if interaction.guild.id != self.bot.main_server_id and self.bot.main_server_id:
+                    await self.bot.update_table_message(self.bot.main_server_id)
+                await interaction.followup.send(f"Removed {username} from leagues: {', '.join(removed_leagues)}", ephemeral=True)
+            else:
+                await interaction.followup.send(f"User {username} was not found in any of those leagues.", ephemeral=True)
+
+        @self.bot.tree.command(name="delete_user", description="Completely delete a user from all servers and leagues")
+        @app_commands.describe(username="Username to completely delete (PERMANENT)")
+        async def delete_user(interaction: discord.Interaction, username: str):
+            if not await check_admin_permissions(interaction):
+                await interaction.response.send_message("You need administrator permissions.", ephemeral=True)
+                return
+
+            await interaction.response.defer(ephemeral=True)
+            
+            username = username.lower().strip()
+            result = await self.bot.db.delete_user_completely(username)
+            
+            if result:
+                await self.bot.update_table_message(interaction.guild.id)
+                if interaction.guild.id != self.bot.main_server_id and self.bot.main_server_id:
+                    await self.bot.update_table_message(self.bot.main_server_id)
+                await interaction.followup.send(f"⚠️ PERMANENTLY deleted {username} from all servers and leagues.", ephemeral=True)
+            else:
+                await interaction.followup.send(f"User {username} was not found.", ephemeral=True)
+
+        @self.bot.tree.command(name="sync_commands", description="Sync new commands with Discord")
+        async def sync_commands(interaction: discord.Interaction):
+            if not await check_admin_permissions(interaction):
+                await interaction.response.send_message("You need administrator permissions.", ephemeral=True)
+                return
+
+            await interaction.response.defer(ephemeral=True)
+            try:
+                synced = await self.bot.tree.sync()
+                await interaction.followup.send(f"✅ Synced {len(synced)} commands with Discord!", ephemeral=True)
+            except Exception as e:
+                await interaction.followup.send(f"❌ Failed to sync commands: {e}", ephemeral=True)
+            
+            league_names = [league.strip() for league in leagues.split(',')]
             
             # Add user to server and leagues
             valid_leagues, invalid_leagues = await self.bot.db.add_user_to_server(
