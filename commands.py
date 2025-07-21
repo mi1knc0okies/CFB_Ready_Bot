@@ -496,30 +496,6 @@ class BotCommands:
             else:
                 await interaction.followup.send(f"User {username} was not found in any of those leagues.", ephemeral=True)
 
-        @self.bot.tree.command(name="delete_user", description="Completely delete a user from all servers and leagues")
-        @app_commands.describe(username="Username to completely delete (PERMANENT)")
-        async def delete_user(interaction: discord.Interaction, username: str):
-            is_admin = (interaction.user.guild_permissions.administrator or
-                       interaction.user.id == interaction.guild.owner_id or
-                       interaction.user.guild_permissions.manage_guild)
-
-            if not is_admin:
-                await interaction.response.send_message("You need administrator permissions.", ephemeral=True)
-                return
-
-            await interaction.response.defer(ephemeral=True)
-            
-            username = username.lower().strip()
-            result = await self.bot.db.delete_user_completely(username)
-            
-            if result:
-                await self.bot.update_table_message(interaction.guild.id)
-                if interaction.guild.id != self.bot.main_server_id and self.bot.main_server_id:
-                    await self.bot.update_table_message(self.bot.main_server_id)
-                await interaction.followup.send(f"⚠️ PERMANENTLY deleted {username} from all servers and leagues.", ephemeral=True)
-            else:
-                await interaction.followup.send(f"User {username} was not found.", ephemeral=True)
-
         @self.bot.tree.command(name="user_info", description="Show detailed information about a user")
         @app_commands.describe(username="Username to get info for")
         async def user_info(interaction: discord.Interaction, username: str):
