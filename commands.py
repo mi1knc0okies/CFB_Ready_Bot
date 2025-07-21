@@ -9,17 +9,27 @@ class BotCommands:
     def __init__(self, bot):
         self.bot = bot
 
+    async def check_admin_permissions(self, interaction):
+        """Check if user has admin permissions (Discord admin OR bot admin)"""
+        # Check Discord server permissions
+        is_discord_admin = (interaction.user.guild_permissions.administrator or
+                           interaction.user.id == interaction.guild.owner_id or
+                           interaction.user.guild_permissions.manage_guild)
+        
+        if is_discord_admin:
+            return True
+        
+        # Check bot admin permissions
+        is_bot_admin = await self.bot.db.check_user_admin(interaction.user.id)
+        return is_bot_admin
+
     def setup_commands(self):
         """Register all slash commands"""
         
         @self.bot.tree.command(name="setup", description="Setup the bot for this server")
         @app_commands.describe(channel="Channel to post tables in")
         async def setup(interaction: discord.Interaction, channel: discord.TextChannel):
-            is_admin = (interaction.user.guild_permissions.administrator or
-                       interaction.user.id == interaction.guild.owner_id or
-                       interaction.user.guild_permissions.manage_guild)
-
-            if not is_admin:
+            if not await self.check_admin_permissions(interaction):
                 await interaction.response.send_message("You need administrator permissions.", ephemeral=True)
                 return
 
@@ -43,11 +53,7 @@ class BotCommands:
             display_name="Display name (e.g., REL, FCS)"
         )
         async def create_league(interaction: discord.Interaction, name: str, display_name: str):
-            is_admin = (interaction.user.guild_permissions.administrator or
-                       interaction.user.id == interaction.guild.owner_id or
-                       interaction.user.guild_permissions.manage_guild)
-
-            if not is_admin:
+            if not await self.check_admin_permissions(interaction):
                 await interaction.response.send_message("You need administrator permissions.", ephemeral=True)
                 return
 
@@ -64,11 +70,7 @@ class BotCommands:
         @self.bot.tree.command(name="assign_league", description="Assign a league to this server")
         @app_commands.describe(league_name="League identifier to assign")
         async def assign_league(interaction: discord.Interaction, league_name: str):
-            is_admin = (interaction.user.guild_permissions.administrator or
-                       interaction.user.id == interaction.guild.owner_id or
-                       interaction.user.guild_permissions.manage_guild)
-
-            if not is_admin:
+            if not await self.check_admin_permissions(interaction):
                 await interaction.response.send_message("You need administrator permissions.", ephemeral=True)
                 return
 
@@ -100,62 +102,14 @@ class BotCommands:
             leagues="Comma-separated league names they participate in"
         )
         async def add_user(interaction: discord.Interaction, username: str, leagues: str):
-            await interaction.response.defer(ephemeral=True)
-            
-            is_admin = (interaction.user.guild_permissions.administrator or 
-                       interaction.user.id == interaction.guild.owner_id or
-                       interaction.user.guild_permissions.manage_guild)
-            
-            if not is_admin:
-                await interaction.followup.send("You need administrator permissions.", ephemeral=True)
-                return
-            
-            league_names = [l.strip().lower() for l in leagues.split(',')]
-            
-            removed_leagues = await self.bot.db.remove_user_from_leagues(username, league_names)
-            
-            if removed_leagues:
-                await self.bot.update_table_message(interaction.guild.id)
-                if interaction.guild.id != self.bot.main_server_id and self.bot.main_server_id:
-                    await self.bot.update_table_message(self.bot.main_server_id)
-                await interaction.followup.send(f"Removed {username} from leagues: {', '.join(removed_leagues)}", ephemeral=True)
-            else:
-                await interaction.followup.send(f"User {username} was not found in any of those leagues.", ephemeral=True)
-
-        @self.bot.tree.command(name="delete_user", description="Completely delete a user from all servers and leagues")
-        @app_commands.describe(username="Username to completely delete (PERMANENT)")
-        async def delete_user(interaction: discord.Interaction, username: str):
-            if not await check_admin_permissions(interaction):
+            if not await self.check_admin_permissions(interaction):
                 await interaction.response.send_message("You need administrator permissions.", ephemeral=True)
                 return
-
+            
             await interaction.response.defer(ephemeral=True)
             
             username = username.lower().strip()
-            result = await self.bot.db.delete_user_completely(username)
-            
-            if result:
-                await self.bot.update_table_message(interaction.guild.id)
-                if interaction.guild.id != self.bot.main_server_id and self.bot.main_server_id:
-                    await self.bot.update_table_message(self.bot.main_server_id)
-                await interaction.followup.send(f"⚠️ PERMANENTLY deleted {username} from all servers and leagues.", ephemeral=True)
-            else:
-                await interaction.followup.send(f"User {username} was not found.", ephemeral=True)
-
-        @self.bot.tree.command(name="sync_commands", description="Sync new commands with Discord")
-        async def sync_commands(interaction: discord.Interaction):
-            if not await check_admin_permissions(interaction):
-                await interaction.response.send_message("You need administrator permissions.", ephemeral=True)
-                return
-
-            await interaction.response.defer(ephemeral=True)
-            try:
-                synced = await self.bot.tree.sync()
-                await interaction.followup.send(f"✅ Synced {len(synced)} commands with Discord!", ephemeral=True)
-            except Exception as e:
-                await interaction.followup.send(f"❌ Failed to sync commands: {e}", ephemeral=True)
-            
-            league_names = [league.strip() for league in leagues.split(',')]
+            league_names = [l.strip().lower() for l in leagues.split(',')]
             
             # Add user to server and leagues
             valid_leagues, invalid_leagues = await self.bot.db.add_user_to_server(
@@ -178,6 +132,89 @@ class BotCommands:
                     response_msg = f"Warning: These leagues were not found: {', '.join(invalid_leagues)}"
             
             await interaction.followup.send(response_msg, ephemeral=True)
+
+        @self.bot.tree.command(name="add_user_to_league", description="Add an existing user to specific leagues")
+        @app_commands.describe(
+            username="Username to add to leagues",
+            leagues="Comma-separated league names"
+        )
+        async def add_user_to_league(interaction: discord.Interaction, username: str, leagues: str):
+            if not await self.check_admin_permissions(interaction):
+                await interaction.response.send_message("You need administrator permissions.", ephemeral=True)
+                return
+
+            await interaction.response.defer(ephemeral=True)
+            
+            username = username.lower().strip()
+            league_names = [l.strip().lower() for l in leagues.split(',')]
+            
+            result = await self.bot.db.add_existing_user_to_leagues(username, league_names)
+            
+            if result is None:
+                await interaction.followup.send(f"User '{username}' not found.", ephemeral=True)
+                return
+            
+            valid_leagues, invalid_leagues = result
+            
+            await self.bot.update_table_message(interaction.guild.id)
+            if interaction.guild.id != self.bot.main_server_id and self.bot.main_server_id:
+                await self.bot.update_table_message(self.bot.main_server_id)
+            
+            # Build response message
+            response_msg = ""
+            if valid_leagues:
+                response_msg += f"Added {username} to leagues: {', '.join(valid_leagues)}"
+            
+            if invalid_leagues:
+                if response_msg:
+                    response_msg += f"\n\nWarning: These leagues were not found: {', '.join(invalid_leagues)}"
+                else:
+                    response_msg = f"Warning: These leagues were not found: {', '.join(invalid_leagues)}"
+            
+            await interaction.followup.send(response_msg, ephemeral=True)
+
+        @self.bot.tree.command(name="link_discord", description="Link a Discord user to a username")
+        @app_commands.describe(
+            username="Username to link",
+            user="Discord user to link to this username"
+        )
+        async def link_discord(interaction: discord.Interaction, username: str, user: discord.User):
+            if not await self.check_admin_permissions(interaction):
+                await interaction.response.send_message("You need administrator permissions.", ephemeral=True)
+                return
+
+            await interaction.response.defer(ephemeral=True)
+            
+            username = username.lower().strip()
+            
+            result = await self.bot.db.link_discord_user(username, user.id)
+            
+            if result:
+                await interaction.followup.send(f"Linked Discord user {user.mention} to username '{username}'", ephemeral=True)
+            else:
+                await interaction.followup.send(f"Username '{username}' not found.", ephemeral=True)
+
+        @self.bot.tree.command(name="set_admin", description="Set bot admin status for a user")
+        @app_commands.describe(
+            username="Username to set admin status for",
+            admin="True to grant admin, False to revoke"
+        )
+        async def set_admin(interaction: discord.Interaction, username: str, admin: bool):
+            if not await self.check_admin_permissions(interaction):
+                await interaction.response.send_message("You need administrator permissions.", ephemeral=True)
+                return
+
+            await interaction.response.defer(ephemeral=True)
+            
+            username = username.lower().strip()
+            
+            result = await self.bot.db.set_user_admin(username, admin)
+            
+            if result:
+                status = "granted" if admin else "revoked"
+                await interaction.followup.send(f"Bot admin privileges {status} for {username}", ephemeral=True)
+            else:
+                await interaction.followup.send(f"User '{username}' not found.", ephemeral=True)
 
         @self.bot.tree.command(name="ready", description="Mark yourself as ready for specified leagues")
         @app_commands.describe(leagues="Comma-separated league names")
@@ -260,11 +297,7 @@ class BotCommands:
             status="Custom status (bri, don, bye, etc.) or leave empty to clear"
         )
         async def set_status(interaction: discord.Interaction, username: str, league: str, status: str = ""):
-            is_admin = (interaction.user.guild_permissions.administrator or
-                       interaction.user.id == interaction.guild.owner_id or
-                       interaction.user.guild_permissions.manage_guild)
-
-            if not is_admin:
+            if not await self.check_admin_permissions(interaction):
                 await interaction.response.send_message("You need administrator permissions.", ephemeral=True)
                 return
 
@@ -291,7 +324,7 @@ class BotCommands:
         async def advance(interaction: discord.Interaction, league: str):
             await interaction.response.defer(ephemeral=True)
             
-            username, allowed = self.bot.get_user_mapping(interaction.user.id)
+            username, allowed = await self.bot.get_user_mapping(interaction.user.id)
             if not username:
                 await interaction.followup.send("You are not registered. Contact admin.", ephemeral=True)
                 return
@@ -328,7 +361,7 @@ class BotCommands:
         )
         async def set_week(interaction: discord.Interaction, league: str, week: int):
             # Allow any registered user to set weeks
-            username, allowed = self.bot.get_user_mapping(interaction.user.id)
+            username, allowed = await self.bot.get_user_mapping(interaction.user.id)
             if not username:
                 await interaction.response.send_message("You are not registered. Contact admin.", ephemeral=True)
                 return
@@ -350,75 +383,6 @@ class BotCommands:
                 await interaction.followup.send(f"Set {league_display} to Week {week} (was Week {old_week})", ephemeral=True)
             else:
                 await interaction.followup.send(f"League '{league}' not found or not assigned to this server.", ephemeral=True)
-
-        @self.bot.tree.command(name="add_user_to_league", description="Add an existing user to specific leagues")
-        @app_commands.describe(
-            username="Username to add to leagues",
-            leagues="Comma-separated league names"
-        )
-        async def add_user_to_league(interaction: discord.Interaction, username: str, leagues: str):
-            is_admin = (interaction.user.guild_permissions.administrator or
-                       interaction.user.id == interaction.guild.owner_id or
-                       interaction.user.guild_permissions.manage_guild)
-
-            if not is_admin:
-                await interaction.response.send_message("You need administrator permissions.", ephemeral=True)
-                return
-
-            await interaction.response.defer(ephemeral=True)
-            
-            username = username.lower().strip()
-            league_names = [l.strip().lower() for l in leagues.split(',')]
-            
-            result = await self.bot.db.add_existing_user_to_leagues(username, league_names)
-            
-            if result is None:
-                await interaction.followup.send(f"User '{username}' not found.", ephemeral=True)
-                return
-            
-            valid_leagues, invalid_leagues = result
-            
-            await self.bot.update_table_message(interaction.guild.id)
-            if interaction.guild.id != self.bot.main_server_id and self.bot.main_server_id:
-                await self.bot.update_table_message(self.bot.main_server_id)
-            
-            # Build response message
-            response_msg = ""
-            if valid_leagues:
-                response_msg += f"Added {username} to leagues: {', '.join(valid_leagues)}"
-            
-            if invalid_leagues:
-                if response_msg:
-                    response_msg += f"\n\nWarning: These leagues were not found: {', '.join(invalid_leagues)}"
-                else:
-                    response_msg = f"Warning: These leagues were not found: {', '.join(invalid_leagues)}"
-            
-            await interaction.followup.send(response_msg, ephemeral=True)
-
-        @self.bot.tree.command(name="link_discord", description="Link a Discord user to a username")
-        @app_commands.describe(
-            username="Username to link",
-            user="Discord user to link to this username"
-        )
-        async def link_discord(interaction: discord.Interaction, username: str, user: discord.User):
-            is_admin = (interaction.user.guild_permissions.administrator or
-                       interaction.user.id == interaction.guild.owner_id or
-                       interaction.user.guild_permissions.manage_guild)
-
-            if not is_admin:
-                await interaction.response.send_message("You need administrator permissions.", ephemeral=True)
-                return
-
-            await interaction.response.defer(ephemeral=True)
-            
-            username = username.lower().strip()
-            
-            result = await self.bot.db.link_discord_user(username, user.id)
-            
-            if result:
-                await interaction.followup.send(f"Linked Discord user {user.mention} to username '{username}'", ephemeral=True)
-            else:
-                await interaction.followup.send(f"Username '{username}' not found.", ephemeral=True)
 
         @self.bot.tree.command(name="status", description="View current table")
         async def status(interaction: discord.Interaction):
@@ -443,41 +407,13 @@ class BotCommands:
             # Fallback to ephemeral response
             await interaction.response.send_message(table, ephemeral=True)
 
-        @self.bot.tree.command(name="remove_user", description="Remove a user from this server")
-        @app_commands.describe(username="Username to remove from this server")
-        async def remove_user(interaction: discord.Interaction, username: str):
-            is_admin = (interaction.user.guild_permissions.administrator or
-                       interaction.user.id == interaction.guild.owner_id or
-                       interaction.user.guild_permissions.manage_guild)
-
-            if not is_admin:
-                await interaction.response.send_message("You need administrator permissions.", ephemeral=True)
-                return
-
-            await interaction.response.defer(ephemeral=True)
-            
-            username = username.lower().strip()
-            result = await self.bot.db.remove_user_from_server(username, interaction.guild.id)
-            
-            if result:
-                await self.bot.update_table_message(interaction.guild.id)
-                if interaction.guild.id != self.bot.main_server_id and self.bot.main_server_id:
-                    await self.bot.update_table_message(self.bot.main_server_id)
-                await interaction.followup.send(f"Removed {username} from this server.", ephemeral=True)
-            else:
-                await interaction.followup.send(f"User {username} was not found on this server.", ephemeral=True)
-
         @self.bot.tree.command(name="remove_user_from_league", description="Remove a user from specific leagues")
         @app_commands.describe(
             username="Username to remove from leagues",
             leagues="Comma-separated league names to remove them from"
         )
         async def remove_user_from_league(interaction: discord.Interaction, username: str, leagues: str):
-            is_admin = (interaction.user.guild_permissions.administrator or
-                       interaction.user.id == interaction.guild.owner_id or
-                       interaction.user.guild_permissions.manage_guild)
-
-            if not is_admin:
+            if not await self.check_admin_permissions(interaction):
                 await interaction.response.send_message("You need administrator permissions.", ephemeral=True)
                 return
 
@@ -496,14 +432,30 @@ class BotCommands:
             else:
                 await interaction.followup.send(f"User {username} was not found in any of those leagues.", ephemeral=True)
 
+        @self.bot.tree.command(name="delete_user", description="Completely delete a user from all servers and leagues")
+        @app_commands.describe(username="Username to completely delete (PERMANENT)")
+        async def delete_user(interaction: discord.Interaction, username: str):
+            if not await self.check_admin_permissions(interaction):
+                await interaction.response.send_message("You need administrator permissions.", ephemeral=True)
+                return
+
+            await interaction.response.defer(ephemeral=True)
+            
+            username = username.lower().strip()
+            result = await self.bot.db.delete_user_completely(username)
+            
+            if result:
+                await self.bot.update_table_message(interaction.guild.id)
+                if interaction.guild.id != self.bot.main_server_id and self.bot.main_server_id:
+                    await self.bot.update_table_message(self.bot.main_server_id)
+                await interaction.followup.send(f"⚠️ PERMANENTLY deleted {username} from all servers and leagues.", ephemeral=True)
+            else:
+                await interaction.followup.send(f"User {username} was not found.", ephemeral=True)
+
         @self.bot.tree.command(name="user_info", description="Show detailed information about a user")
         @app_commands.describe(username="Username to get info for")
         async def user_info(interaction: discord.Interaction, username: str):
-            is_admin = (interaction.user.guild_permissions.administrator or
-                       interaction.user.id == interaction.guild.owner_id or
-                       interaction.user.guild_permissions.manage_guild)
-
-            if not is_admin:
+            if not await self.check_admin_permissions(interaction):
                 await interaction.response.send_message("You need administrator permissions.", ephemeral=True)
                 return
 
@@ -540,11 +492,7 @@ class BotCommands:
 
         @self.bot.tree.command(name="list_users", description="List all users on this server")
         async def list_users(interaction: discord.Interaction):
-            is_admin = (interaction.user.guild_permissions.administrator or
-                       interaction.user.id == interaction.guild.owner_id or
-                       interaction.user.guild_permissions.manage_guild)
-
-            if not is_admin:
+            if not await self.check_admin_permissions(interaction):
                 await interaction.response.send_message("You need administrator permissions.", ephemeral=True)
                 return
 
@@ -562,11 +510,7 @@ class BotCommands:
 
         @self.bot.tree.command(name="sync_commands", description="Sync new commands with Discord")
         async def sync_commands(interaction: discord.Interaction):
-            is_admin = (interaction.user.guild_permissions.administrator or
-                       interaction.user.id == interaction.guild.owner_id or
-                       interaction.user.guild_permissions.manage_guild)
-
-            if not is_admin:
+            if not await self.check_admin_permissions(interaction):
                 await interaction.response.send_message("You need administrator permissions.", ephemeral=True)
                 return
 
@@ -580,11 +524,7 @@ class BotCommands:
 
         @self.bot.tree.command(name="migrate", description="Migrate existing data to new schema")
         async def migrate(interaction: discord.Interaction):
-            is_admin = (interaction.user.guild_permissions.administrator or
-                       interaction.user.id == interaction.guild.owner_id or
-                       interaction.user.guild_permissions.manage_guild)
-
-            if not is_admin:
+            if not await self.check_admin_permissions(interaction):
                 await interaction.response.send_message("You need administrator permissions.", ephemeral=True)
                 return
 
