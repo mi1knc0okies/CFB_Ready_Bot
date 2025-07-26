@@ -16,17 +16,6 @@ class DatabaseManager:
                 min_size=1,
                 max_size=10
             )
-        else:
-            # Fall back to individual connection parameters
-            self.pool = await asyncpg.create_pool(
-                host=os.getenv('DB_HOST', 'localhost'),
-                port=int(os.getenv('DB_PORT', 5432)),
-                user=os.getenv('DB_USER'),
-                password=os.getenv('DB_PASSWORD'),
-                database=os.getenv('DB_NAME'),
-                min_size=1,
-                max_size=10
-            )
         await self.create_tables()
 
     async def create_tables(self):
@@ -293,7 +282,7 @@ class DatabaseManager:
             return result  # Return None if user not in league, empty string if not ready, or actual status
 
     async def add_user_to_server(self, username, server_id, league_names):
-        """Add a user globally and assign them to leagues (no server tracking)"""
+        """Add a user globally and assign them to leagues"""
         async with self.pool.acquire() as conn:
             # Check if we need to migrate first
             if await self.needs_migration():

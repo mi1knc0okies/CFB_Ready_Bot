@@ -7,7 +7,7 @@ import sys
 
 from db import DatabaseManager
 from table import TableGenerator
-from commands import BotCommands
+from command_list import BotCommands
 
 if sys.platform.startswith('win'):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -72,7 +72,7 @@ class CFBBot(commands.Bot):
                 "SELECT main_channel_id, table_message_id, is_main_server FROM servers WHERE server_id = $1",
                 server_id
             )
-
+            print(server_info)
             if not server_info or not server_info['main_channel_id']:
                 return
 

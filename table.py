@@ -97,7 +97,7 @@ class TableGenerator:
             if info['total'] > 0:
                 ready_display = f"{info['percentage']:.0f}%"
                 if info['over_50']:
-                    ready_display = f"*{ready_display}*"  # Mark leagues over 50%
+                    ready_display = f"{ready_display}"  # Mark leagues over 50%
             else:
                 ready_display = "0%"
             table += ready_display.center(league_width) + "|"

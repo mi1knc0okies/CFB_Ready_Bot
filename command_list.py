@@ -11,14 +11,6 @@ class BotCommands:
 
     async def check_admin_permissions(self, interaction):
         """Check if user has admin permissions (Discord admin OR bot admin)"""
-        # Check Discord server permissions
-        is_discord_admin = (interaction.user.guild_permissions.administrator or
-                           interaction.user.id == interaction.guild.owner_id or
-                           interaction.user.guild_permissions.manage_guild)
-        
-        if is_discord_admin:
-            return True
-        
         # Check bot admin permissions
         is_bot_admin = await self.bot.db.check_user_admin(interaction.user.id)
         return is_bot_admin
@@ -101,7 +93,7 @@ class BotCommands:
             username="Username to add",
             leagues="Comma-separated league names they participate in"
         )
-        async def add_user(interaction: discord.Interaction, username: str, leagues: str):
+        async def add_user(interaction: discord.Interaction, username: str, discord_id: int, leagues: str):
             if not await self.check_admin_permissions(interaction):
                 await interaction.response.send_message("You need administrator permissions.", ephemeral=True)
                 return
@@ -294,7 +286,7 @@ class BotCommands:
         @app_commands.describe(
             username="Username to set status for",
             league="League name", 
-            status="Custom status (bri, don, bye, etc.) or leave empty to clear"
+            status="Custom status (Ste, Ale, BYE, X, etc.) or leave empty to clear"
         )
         async def set_status(interaction: discord.Interaction, username: str, league: str, status: str = ""):
             if not await self.check_admin_permissions(interaction):
