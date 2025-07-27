@@ -281,7 +281,7 @@ class DatabaseManager:
             result = await conn.fetchval(query, username, league_id)
             return result  # Return None if user not in league, empty string if not ready, or actual status
 
-    async def add_user_to_server(self, username, server_id, league_names):
+    async def add_user_to_server(self, username, league_names): # Need to make adding discord_ID optional
         """Add a user globally and assign them to leagues"""
         async with self.pool.acquire() as conn:
             # Check if we need to migrate first
@@ -424,6 +424,7 @@ class DatabaseManager:
             is_admin = await conn.fetchval("""
                 SELECT is_admin FROM users WHERE discord_id = $1
             """, discord_id)
+        
             return bool(is_admin)
 
     async def set_user_admin(self, username, is_admin):

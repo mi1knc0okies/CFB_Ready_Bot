@@ -64,74 +64,72 @@ class CFBBot(commands.Bot):
                 server_id
             )
             return self.get_channel(channel_id) if channel_id else None
-
-    async def update_table_message(self, server_id):
-        """Update or post the table message for a server"""
+    
+    async def update_table_message(self, server_id, status_message=None):
+        """Update or post the table message, optionally with a status message"""
         async with self.db.pool.acquire() as conn:
             server_info = await conn.fetchrow(
                 "SELECT main_channel_id, table_message_id, is_main_server FROM servers WHERE server_id = $1",
                 server_id
             )
-            print(server_info)
+            
             if not server_info or not server_info['main_channel_id']:
                 return
-
+            
             channel = self.get_channel(server_info['main_channel_id'])
             if not channel:
                 return
-
+            
             show_all = server_info['is_main_server']
             table_content = await self.table_generator.generate_table(server_id, show_all_servers=show_all)
-
+            
+            # Add status message if provided
+            if status_message:
+                content = f"{table_content}\n\n{status_message}"
+            else:
+                content = table_content
+            
             # Try to edit existing message
             if server_info['table_message_id']:
                 try:
                     message = await channel.fetch_message(server_info['table_message_id'])
-                    await message.edit(content=table_content)
+                    await message.edit(content=content)
                     return
                 except discord.NotFound:
                     pass
-
+                
             # Send new message
-            message = await channel.send(table_content)
+            message = await channel.send(content)
             await conn.execute(
                 "UPDATE servers SET table_message_id = $1 WHERE server_id = $2",
                 message.id, server_id
             )
 
-    async def post_status_update(self, server_id, message_content):
-        """Post a status update message, editing the previous one if possible"""
-        async with self.db.pool.acquire() as conn:
-            server_info = await conn.fetchrow(
-                "SELECT main_channel_id, latest_status_message_id FROM servers WHERE server_id = $1",
-                server_id
-            )
-
-            if not server_info or not server_info['main_channel_id']:
-                return
-
-            channel = self.get_channel(server_info['main_channel_id'])
-            if not channel:
-                return
-
-            # Try to edit the existing status message
-            if server_info['latest_status_message_id']:
-                try:
-                    old_message = await channel.fetch_message(server_info['latest_status_message_id'])
-                    await old_message.edit(content=message_content)
-                    return
-                except discord.NotFound:
-                    pass  # Message was deleted, we'll send a new one
-
-            # Send new status message
-            try:
-                new_message = await channel.send(message_content)
-                await conn.execute(
-                    "UPDATE servers SET latest_status_message_id = $1 WHERE server_id = $2",
-                    new_message.id, server_id
-                )
-            except Exception as e:
-                print(f"Failed to send status update: {e}")
+    async def update_all_relevant_servers(self, league_names=None, status_message=None):
+        """Update table messages on all servers that have the affected leagues"""
+    
+        if league_names:
+            # Update only servers that have these specific leagues
+            async with self.db.pool.acquire() as conn:
+                # Get all servers that have any of these leagues
+                placeholders = ','.join(f'${i+1}' for i in range(len(league_names)))
+                affected_servers = await conn.fetch(f"""
+                    SELECT DISTINCT sl.server_id
+                    FROM server_leagues sl
+                    JOIN leagues l ON sl.league_id = l.league_id
+                    WHERE l.name IN ({placeholders})
+                """, *league_names)
+                
+                server_ids = [row['server_id'] for row in affected_servers]
+        else:
+            # Update all servers (for global changes)
+            async with self.db.pool.acquire() as conn:
+                all_servers = await conn.fetch("SELECT server_id FROM servers WHERE main_channel_id IS NOT NULL")
+                server_ids = [row['server_id'] for row in all_servers]
+        
+        # Update each affected server
+        for server_id in server_ids:
+            await self.update_table_message(server_id, status_message)
 
     async def setup_hook(self):
         print("Setting up bot...")
