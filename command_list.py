@@ -223,7 +223,7 @@ class BotCommands:
         async def ready(interaction: discord.Interaction, leagues: str):
             await interaction.response.defer(ephemeral=True)
 
-            username, allowed = await self.bot.get_user_mapping(interaction.user.id)
+            username = await self.bot.db.get_user_by_discord_id(interaction.user.id)
             if not username:
                 await interaction.followup.send("You are not registered. Contact admin.", ephemeral=True)
                 return
@@ -269,7 +269,7 @@ class BotCommands:
         async def unready(interaction: discord.Interaction, leagues: str):
             await interaction.response.defer(ephemeral=True)
 
-            username, allowed = await self.bot.get_user_mapping(interaction.user.id)
+            username = await self.bot.db.get_user_by_discord_id(interaction.user.id)
             if not username:
                 await interaction.followup.send("You are not registered. Contact admin.", ephemeral=True)
                 return
@@ -318,7 +318,7 @@ class BotCommands:
         async def advance(interaction: discord.Interaction, league: str):
             await interaction.response.defer(ephemeral=True)
 
-            username, allowed = await self.bot.get_user_mapping(interaction.user.id)
+            username = await self.bot.db.get_user_by_discord_id(interaction.user.id)
             if not username:
                 await interaction.followup.send("You are not registered. Contact admin.", ephemeral=True)
                 return
@@ -353,14 +353,11 @@ class BotCommands:
         )
         async def set_week(interaction: discord.Interaction, league: str, week: int):
             # Allow any registered user to set weeks
-            username, allowed = await self.bot.get_user_mapping(interaction.user.id)
+            username = await self.bot.db.get_user_by_discord_id(interaction.user.id)
             if not username:
                 await interaction.response.send_message("You are not registered. Contact admin.", ephemeral=True)
                 return
 
-            if week < 1:
-                await interaction.response.send_message("Week must be 1 or greater.", ephemeral=True)
-                return
 
             await interaction.response.defer(ephemeral=True)
 
