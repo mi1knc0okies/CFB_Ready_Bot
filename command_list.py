@@ -89,48 +89,48 @@ class BotCommands:
                     await interaction.response.send_message(f"League '{league['display_name']}' already assigned to this server!", ephemeral=True)
 
         @self.bot.tree.command(name="add_user", description="Add a user and assign them to leagues")
-        @app_commands.describe(
-            username="Username to add",
-            discord_id="Discord user ID to link to this username",
-            leagues="Comma-separated league names they participate in"
-        )
-        async def add_user(interaction: discord.Interaction, username: str, discord_id: int, leagues: str):
-            if not await self.check_admin_permissions(interaction):
-                await interaction.response.send_message("You need administrator permissions.", ephemeral=True)
-                return
-
-            await interaction.response.defer(ephemeral=True)
-
-            username = username.lower().strip()
-            league_names = [l.strip().lower() for l in leagues.split(',')]
-
-            # Add user and assign to leagues
-            valid_leagues, invalid_leagues = await self.bot.db.add_user_to_server(username, league_names)
-
-            # Link Discord ID if provided
-            if discord_id:
-                await self.bot.db.link_discord_user(username, discord_id)
-
-            # Update all servers
-            await self.bot.update_all_relevant_servers()
-
-            # Build response message
-            response_msg = ""
-            if valid_leagues:
-                response_msg += f"Added {username} to leagues: {', '.join(valid_leagues)}"
-                if discord_id:
-                    response_msg += f" and linked Discord ID {discord_id}"
-
-            if invalid_leagues:
-                if response_msg:
-                    response_msg += f"\n\nWarning: These leagues were not found: {', '.join(invalid_leagues)}"
-                else:
-                    response_msg = f"Warning: These leagues were not found: {', '.join(invalid_leagues)}"
-
-            if not response_msg:
-                response_msg = "No changes made."
-
-            await interaction.followup.send(response_msg, ephemeral=True)
+@app_commands.describe(
+    username="Username to add",
+    leagues="Comma-separated league names they participate in",
+    discord_user="Discord user to link (optional)"
+)
+async def add_user(interaction: discord.Interaction, username: str, leagues: str, discord_user: discord.User = None):
+    if not await self.check_admin_permissions(interaction):
+        await interaction.response.send_message("You need administrator permissions.", ephemeral=True)
+        return
+    
+    await interaction.response.defer(ephemeral=True)
+    
+    username = username.lower().strip()
+    league_names = [l.strip().lower() for l in leagues.split(',')]
+    
+    # Add user and assign to leagues
+    valid_leagues, invalid_leagues = await self.bot.db.add_user_to_server(username, league_names)
+    
+    # Link Discord ID if provided
+    if discord_user:
+        await self.bot.db.link_discord_user(username, discord_user.id)
+    
+    # Update all servers
+    await self.bot.update_all_relevant_servers()
+    
+    # Build response message
+    response_msg = ""
+    if valid_leagues:
+        response_msg += f"Added {username} to leagues: {', '.join(valid_leagues)}"
+        if discord_user:
+            response_msg += f" and linked to Discord user {discord_user.mention}"
+    
+    if invalid_leagues:
+        if response_msg:
+            response_msg += f"\n\nWarning: These leagues were not found: {', '.join(invalid_leagues)}"
+        else:
+            response_msg = f"Warning: These leagues were not found: {', '.join(invalid_leagues)}"
+    
+    if not response_msg:
+        response_msg = "No changes made."
+    
+    await interaction.followup.send(response_msg, ephemeral=True)
     
         @self.bot.tree.command(name="add_user_to_league", description="Add an existing user to specific leagues")
         @app_commands.describe(
